@@ -84,6 +84,11 @@ class SharedKeyModule(nn.Module):
         
         return k
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Dict, List, Optional, Tuple
+from separated_attention import QueryModule, KeyModule, ValueModule, AttentionCombiner
 
 class AdaptiveUpdateAttention(nn.Module):
     """Attention implementation with content-dependent update frequencies."""
@@ -125,6 +130,8 @@ class AdaptiveUpdateAttention(nn.Module):
         avg_rep = x.mean(dim=1)
         return self.value_update_predictor(avg_rep) > self.update_threshold
     
+        
+            
     def forward(
         self, 
         x: torch.Tensor,
@@ -151,28 +158,36 @@ class AdaptiveUpdateAttention(nn.Module):
         kv_input = xa if xa is not None else x
         
         # Determine whether to update keys and values
-        update_k = key_cache is None or self.should_update_key(kv_input)
-        update_v = value_cache is None or self.should_update_value(kv_input)
+        batch_size = kv_input.shape[0]
+        device = kv_input.device
         
-        # Update keys if needed
-        if update_k.any():
+        # Handle key updates
+        if key_cache is None:
+            update_k = torch.ones(batch_size, dtype=torch.bool, device=device)
             k = self.key_module(kv_input)
-            if key_cache is not None:
-                # Selective update based on batch items that need updating
+        else:
+            update_k = self.should_update_key(kv_input)
+            if update_k.any():
+                new_k = self.key_module(kv_input)
+                # Create update mask with proper dimensions for broadcasting
                 update_mask = update_k.view(-1, 1, 1, 1).expand_as(key_cache)
-                k = torch.where(update_mask, k, key_cache)
-        else:
-            k = key_cache
+                k = torch.where(update_mask, new_k, key_cache)
+            else:
+                k = key_cache
         
-        # Update values if needed
-        if update_v.any():
+        # Handle value updates
+        if value_cache is None:
+            update_v = torch.ones(batch_size, dtype=torch.bool, device=device)
             v = self.value_module(kv_input)
-            if value_cache is not None:
-                # Selective update based on batch items that need updating
-                update_mask = update_v.view(-1, 1, 1, 1).expand_as(value_cache)
-                v = torch.where(update_mask, v, value_cache)
         else:
-            v = value_cache
+            update_v = self.should_update_value(kv_input)
+            if update_v.any():
+                new_v = self.value_module(kv_input)
+                # Create update mask with proper dimensions for broadcasting
+                update_mask = update_v.view(-1, 1, 1, 1).expand_as(value_cache)
+                v = torch.where(update_mask, new_v, value_cache)
+            else:
+                v = value_cache
         
         # Compute attention
         output = self.combiner(q, k, v)
@@ -187,6 +202,22 @@ class AdaptiveUpdateAttention(nn.Module):
         
         return output, cache_updates
 
+def demonstrate_advanced_patterns():
+    # Example usage
+    batch_size, seq_len, dims = 2, 4, 384
+    heads = 2
+    x = torch.randn(batch_size, seq_len, dims)
+    
+    print("\nTesting AdaptiveUpdateAttention:")
+    adaptive_attn = AdaptiveUpdateAttention(dims, heads)
+    output, cache_updates = adaptive_attn(x)
+    print(f"Output shape: {output.shape}")
+    print(f"Key updated: {cache_updates['key_updated']}")
+    print(f"Value updated: {cache_updates['value_updated']}")
+
+
+if __name__ == "__main__":
+    demonstrate_advanced_patterns()
 
 class MultiLayerSeparatedAttention(nn.Module):
     """Stack multiple attention layers with separate Q, K, V modules and flexible update patterns."""
