@@ -1,5 +1,4 @@
 ```python
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -83,7 +82,6 @@ class SharedKeyModule(nn.Module):
         k = k * self.scale
         
         return k
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -318,7 +316,7 @@ class MultiLayerSeparatedAttention(nn.Module):
 
 def demonstrate_advanced_patterns():
     # Example usage
-    batch_size, seq_len, dims = 1, 4, 384
+    batch_size, seq_len, dims = 2, 4, 384
     heads = 2
     x = torch.randn(batch_size, seq_len, dims)
     
